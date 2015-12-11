@@ -1,6 +1,8 @@
 LoggerFileBackend
 =================
 
+[![Build Status](https://travis-ci.org/huaban/logger_file_backend.svg?branch=master)](https://travis-ci.org/huaban/logger_file_backend)
+
 A simple `Logger` backend which writes logs to a file. It does not handle log
 rotation for you, but it does tolerate log file renames, so it can be
 used in conjunction with external log rotation.
