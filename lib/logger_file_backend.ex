@@ -11,7 +11,7 @@ defmodule LoggerFileBackend do
   @type metadata  :: [atom]
 
 
-  @default_format "$time $metadata[$level] $message\n"
+  @default_format "$time [$level] $metadata $message\n"
   @default_rotate_size 10485760 # 10MB
   @default_rotate_count 10
   @default_check_interval 600_000 # 10 minutes
@@ -53,7 +53,6 @@ defmodule LoggerFileBackend do
     {:ok, state}
   end
 
-
   # helpers
 
   defp log_event(_level, _msg, _ts, _md, %{path: nil} = state) do
@@ -70,7 +69,8 @@ defmodule LoggerFileBackend do
     end
   end
 
-  defp log_event(level, msg, {date, {h, m, s, ms}} = ts, md, %{path: path, io_device: io_device, inode: inode, size: rotate_size, count: count} = state) when is_binary(path) do
+  defp log_event(level, msg, {date, {h, m, s, ms}} = ts, md, %{path: path} = state) when is_binary(path) do
+    %{io_device: io_device, inode: inode, size: rotate_size, count: count} = state
     from = :calendar.datetime_to_gregorian_seconds({{1970, 1, 1}, {0, 0, 0}})
     tss = case :calendar.local_time_to_universal_time_dst({date, {h, m, s}}) do
       [] -> raise "local_time_to_universal_time_dst error"
@@ -107,9 +107,52 @@ defmodule LoggerFileBackend do
 
 
   defp format_event(level, msg, ts, md, %{format: format, metadata: metadata}) do
-    Logger.Formatter.format(format, level, msg, ts, Dict.take(md, metadata))
+    Enum.map(format, fn(c) -> output(c, level, msg, ts, Dict.take(md, metadata)) end)
   end
 
+  defp output(:message, _, msg, _, _),        do: msg
+  defp output(:date, _, _, {date, _time}, _), do: Logger.Utils.format_date(date)
+  defp output(:time, _, _, {_date, time}, _), do: Logger.Utils.format_time(time)
+  defp output(:level, level, _, _, _),        do: Atom.to_string(level)
+  defp output(:node, _, _, _, _),             do: Atom.to_string(node())
+
+  defp output(:metadata, _, _, _, []),        do: ""
+  defp output(:metadata, _, _, _, meta) do
+    Enum.map(meta, fn
+      {:module, mod} -> [?@, metadata(mod)]
+      {:function, f} -> [?:, metadata(f)]
+      {:line, line}  -> [?:, metadata(line)]
+      {:pid, pid}    -> metadata(pid)
+      {key, val}     -> [to_string(key), ?=, metadata(val), ?\s]
+    end)
+  end
+
+  defp output(:levelpad, level, _, _, _) do
+    levelpad(level)
+  end
+
+  defp output(other, _, _, _, _), do: other
+
+  defp levelpad(:debug), do: ""
+  defp levelpad(:info), do: " "
+  defp levelpad(:warn), do: " "
+  defp levelpad(:error), do: ""
+
+  defp metadata(pid) when is_pid(pid) do
+    :erlang.pid_to_list(pid)
+  end
+  defp metadata(ref) when is_reference(ref) do
+    '#Ref' ++ rest = :erlang.ref_to_list(ref)
+    rest
+  end
+  defp metadata(atom) when is_atom(atom) do
+    case Atom.to_string(atom) do
+      "Elixir." <> rest -> rest
+      "nil" -> ""
+      binary -> binary
+    end
+  end
+  defp metadata(other), do: to_string(other)
 
   defp configure(name, opts) do
     env = Application.get_env(:logger, name, [])

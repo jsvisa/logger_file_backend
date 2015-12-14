@@ -1,5 +1,5 @@
 defmodule LoggerFileBackendUtil do
-  
+
   def rotate_logfile(file, 0), do: File.rm_rf(file)
   def rotate_logfile(file, 1) do
     case :file.rename(file, "#{file}.0") do
